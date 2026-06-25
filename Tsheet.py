@@ -3,25 +3,55 @@ import pandas as pd
 import zipfile
 import io
 import os
-import shutil
-from copy import copy
 from openpyxl import load_workbook
 from openpyxl.cell.cell import MergedCell
 
-st.set_page_config(page_title="Traffic Sheet Automation", layout="wide")
-st.title("Traffic Sheet Automation Dashboard")
+st.set_page_config(page_title="Tsheet Automation Dashboard", layout="wide")
+st.title("Tsheet Automation Dashboard")
 
 MASTER_TEMPLATE_PATH = "master_template.xlsm"
+TRAFFIC_START_ROW = 9
 
-prisma_file = st.file_uploader(
-    "Upload Prisma / Tsheet Export",
-    type=["xlsx", "xlsm", "xls", "csv"]
-)
+ACCOUNT_TAXONOMY = {
+    "Simon": ["Placement Name = Ad Name"],
+    "Best Friends Animal Society": ["Placement Name = Ad Name"],
+    "BFAS": ["Placement Name = Ad Name"],
+    "ConEd": ["Placement Name = Ad Name"],
+    "HMH": ["Placement Name = Ad Name"],
+    "Ascensus": ["Placement Name = Ad Name"],
+    "IMC": ["Placement Name = Ad Name"],
+    "Tillamook": ["Placement Name = Ad Name"],
+    "AAA": ["Placement Name = Ad Name"],
+    "Hyatt": ["Placement Name = Ad Name"],
+    "Famous Footwear": ["Placement Name = Ad Name"],
+    "Fossil": ["Placement Name = Ad Name"],
+    "Lenovo": ["Placement Name = Ad Name"],
+    "UPS Store": ["Creative Name = Ad Name"],
+    "USTA": ["Dimension = Ad Name"],
+    "Pulte": ["Pulte: Market_Brand_Initiative_Property_Duration"],
+    "Touchstone Energy": ["Last Meaningful Placement Segment"],
+    "Anthem / Elevance": ["ELV_LOB_State_Channel_SizeOrDuration"],
+}
 
-creative_type = st.radio(
-    "Creative setup type",
-    ["Single creative per ad", "Multiple creatives per ad"]
-)
+STATE_MAP = {
+    "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas",
+    "CA": "California", "CO": "Colorado", "CT": "Connecticut", "DE": "Delaware",
+    "FL": "Florida", "GA": "Georgia", "IA": "Iowa", "ID": "Idaho",
+    "IL": "Illinois", "IN": "Indiana", "KS": "Kansas", "KY": "Kentucky",
+    "LA": "Louisiana", "MA": "Massachusetts", "MD": "Maryland",
+    "ME": "Maine", "MI": "Michigan", "MN": "Minnesota", "MO": "Missouri",
+    "MS": "Mississippi", "NC": "North Carolina", "NJ": "New Jersey",
+    "NV": "Nevada", "NY": "New York", "OH": "Ohio", "PA": "Pennsylvania",
+    "TN": "Tennessee", "TX": "Texas", "VA": "Virginia", "WA": "Washington",
+    "WI": "Wisconsin", "DC": "District of Columbia"
+}
+
+prisma_file = st.file_uploader("Upload Prisma / Tsheet Export", type=["xlsx", "xlsm", "xls", "csv"])
+
+selected_account = st.selectbox("Select Account", list(ACCOUNT_TAXONOMY.keys()))
+selected_taxonomy = st.selectbox("Select Ad Name Naming Convention", ACCOUNT_TAXONOMY[selected_account])
+
+creative_type = st.radio("Creative setup type", ["Single creative per ad", "Multiple creatives per ad"])
 
 creative_uploads = st.file_uploader(
     "Upload Creative ZIP or Individual Creative Files",
@@ -29,52 +59,26 @@ creative_uploads = st.file_uploader(
     accept_multiple_files=True
 )
 
-ad_name_option = st.radio(
-    "Is Ad Name same as Placement Name?",
-    ["Yes", "No"]
-)
-
-ad_name_format = None
-if ad_name_option == "No":
-    ad_name_format = st.selectbox(
-        "Select Ad Name format",
-        [
-            "Last 3 parts from Placement Name",
-            "Last 4 parts from Placement Name",
-            "Client_Platform_Audience_Dimension",
-            "Client_Audience_Dimension",
-            "Platform_Audience_Dimension",
-            "Audience_Dimension"
-        ]
-    )
-
 custom_1x1 = st.text_input("1x1 Creative Name", value="Tracking 1x1")
 
-st.subheader("Paste UTM Data")
 utm_text = st.text_area(
     "Paste UTM data from Excel. Recommended columns: Placement Name, Dimension, UTM",
     height=150
 )
 
-utm_output_column = st.text_input(
-    "Traffic_Doc UTM output column",
-    value="P"
-)
+utm_output_column = st.text_input("Traffic_Doc UTM output column", value="P")
 
 
 def read_prisma_file(uploaded_file):
     ext = uploaded_file.name.split(".")[-1].lower()
-
     if ext == "csv":
         return pd.read_csv(uploaded_file)
-
     return pd.read_excel(uploaded_file, sheet_name=0)
 
 
 def read_utm_text(text):
     if not text.strip():
         return pd.DataFrame()
-
     try:
         return pd.read_csv(io.StringIO(text), sep="\t")
     except Exception:
@@ -86,7 +90,6 @@ def read_utm_text(text):
 
 def extract_creative_names(files):
     names = []
-
     if not files:
         return names
 
@@ -113,55 +116,108 @@ def normalize_text(value):
 def normalize_dimension(value):
     if pd.isna(value):
         return ""
-    return (
-        str(value)
-        .lower()
-        .replace(" ", "")
-        .replace("*", "x")
-        .replace("×", "x")
-    )
+    return str(value).lower().replace(" ", "").replace("*", "x").replace("×", "x")
 
 
 def split_placement(name):
     if pd.isna(name):
         return []
-
     name = str(name).strip()
-
     if "_" in name:
-        return [x for x in name.split("_") if x]
-
+        return [x.strip() for x in name.split("_") if x.strip()]
     if "-" in name:
-        return [x for x in name.split("-") if x]
-
+        return [x.strip() for x in name.split("-") if x.strip()]
     return [name]
 
 
-def generate_ad_name(placement_name, dimension, selected_format):
+def generate_pulte_ad_name(placement_name):
     parts = split_placement(placement_name)
-    dim = str(dimension).strip()
 
-    if selected_format == "Last 3 parts from Placement Name":
-        return "_".join(parts[-3:]) if len(parts) >= 3 else str(placement_name)
+    duration = ""
+    for p in parts:
+        if p in [":06", ":15", ":30"]:
+            duration = p.replace(":", "") + "Sec"
 
-    if selected_format == "Last 4 parts from Placement Name":
-        return "_".join(parts[-4:]) if len(parts) >= 4 else str(placement_name)
+    if "VIID" in parts:
+        idx = parts.index("VIID")
+        if len(parts) > idx + 4:
+            market = parts[idx + 1]
+            brand = parts[idx + 2]
+            initiative = parts[idx + 3]
+            property_name = parts[idx + 4]
+            return f"{market}_{brand}_{initiative}_{property_name}_{duration}".strip("_")
 
-    client = parts[0] if len(parts) > 0 else ""
-    platform = parts[1] if len(parts) > 1 else ""
-    audience = parts[-2] if len(parts) >= 2 else ""
+    return str(placement_name)
 
-    if selected_format == "Client_Platform_Audience_Dimension":
-        return "_".join([client, platform, audience, dim])
 
-    if selected_format == "Client_Audience_Dimension":
-        return "_".join([client, audience, dim])
+def generate_touchstone_ad_name(placement_name):
+    parts = split_placement(placement_name)
+    ignore_values = {
+        "TEC", "TEC2023", "PGR", "VID", "NAN", "Trade Desk",
+        "GM", "Spot X PMP", "dCPM", "CTV", ":15", ":30", ":06", "Third Party"
+    }
 
-    if selected_format == "Platform_Audience_Dimension":
-        return "_".join([platform, audience, dim])
+    meaningful = [p for p in parts if p and p not in ignore_values]
+    return meaningful[-1] if meaningful else str(placement_name)
 
-    if selected_format == "Audience_Dimension":
-        return "_".join([audience, dim])
+
+def generate_elv_ad_name(placement_name, dimension):
+    parts = split_placement(placement_name)
+    text = str(placement_name).lower()
+
+    lob = ""
+    state_name = ""
+    channel = ""
+    size_or_duration = ""
+
+    for p in parts:
+        upper = p.upper()
+        if upper in ["MDCD", "MDCR", "CSBD", "BRAN"]:
+            lob = upper
+        if upper in STATE_MAP:
+            state_name = STATE_MAP[upper]
+
+    if "display" in text or "banner" in text:
+        channel = "Display"
+        size_or_duration = str(dimension).strip()
+    elif "ctv" in text:
+        channel = "CTV"
+    elif "olv" in text or "video" in text:
+        channel = "OLV"
+    elif "audio" in text:
+        channel = "Audio"
+
+    if channel != "Display":
+        if ":30" in text:
+            size_or_duration = "30Sec"
+        elif ":15" in text:
+            size_or_duration = "15Sec"
+        elif ":06" in text:
+            size_or_duration = "6Sec"
+        else:
+            size_or_duration = str(dimension).strip()
+
+    return "_".join(["ELV", lob, state_name, channel, size_or_duration]).strip("_")
+
+
+def generate_ad_name_by_account(placement_name, dimension, account, taxonomy, matched_creative=""):
+    if taxonomy == "Placement Name = Ad Name":
+        return str(placement_name)
+
+    if taxonomy == "Creative Name = Ad Name":
+        return matched_creative
+
+    if taxonomy == "Dimension = Ad Name":
+        return str(dimension)
+
+    if account == "Pulte":
+        return generate_pulte_ad_name(placement_name)
+
+    if account == "Touchstone Energy":
+        return generate_touchstone_ad_name(placement_name)
+
+    if account == "Anthem / Elevance":
+        return generate_elv_ad_name(placement_name, dimension)
 
     return str(placement_name)
 
@@ -215,14 +271,12 @@ def find_utm_for_row(utm_df, placement_name, dimension):
     placement_clean = normalize_text(placement_name)
     dim_clean = normalize_dimension(dimension)
 
-    for _, row in df.iterrows():
-        row_placement = normalize_text(row.get(placement_col, "")) if placement_col else ""
-        row_dimension = normalize_dimension(row.get(dimension_col, "")) if dimension_col else ""
+    for _, r in df.iterrows():
+        row_placement = normalize_text(r.get(placement_col, "")) if placement_col else ""
+        row_dimension = normalize_dimension(r.get(dimension_col, "")) if dimension_col else ""
 
-        placement_match = (
-            placement_clean
-            and row_placement
-            and (placement_clean in row_placement or row_placement in placement_clean)
+        placement_match = placement_clean and row_placement and (
+            placement_clean in row_placement or row_placement in placement_clean
         )
 
         dimension_match = True
@@ -230,7 +284,7 @@ def find_utm_for_row(utm_df, placement_name, dimension):
             dimension_match = dim_clean == row_dimension
 
         if placement_match and dimension_match:
-            return row.get(utm_col, "")
+            return r.get(utm_col, "")
 
     return ""
 
@@ -267,7 +321,7 @@ def clear_multi_sheet(ws):
 if st.button("Generate Traffic Sheet"):
 
     if not os.path.exists(MASTER_TEMPLATE_PATH):
-        st.error("master_template.xlsm not found. Keep it in the same folder as app.py.")
+        st.error("master_template.xlsm not found. Upload it to GitHub beside Tsheet.py.")
         st.stop()
 
     if prisma_file is None:
@@ -275,13 +329,11 @@ if st.button("Generate Traffic Sheet"):
         st.stop()
 
     prisma_df = read_prisma_file(prisma_file)
-    utm_df = read_utm_text(utm_text)
     creative_names = extract_creative_names(creative_uploads)
+    utm_df = read_utm_text(utm_text)
 
-    template_bytes = io.BytesIO()
     with open(MASTER_TEMPLATE_PATH, "rb") as f:
-        template_bytes.write(f.read())
-    template_bytes.seek(0)
+        template_bytes = io.BytesIO(f.read())
 
     wb = load_workbook(template_bytes, keep_vba=True)
 
@@ -289,18 +341,14 @@ if st.button("Generate Traffic Sheet"):
     ws_traffic = wb["Traffic_Doc"]
     ws_multi = wb["Multi-Ad or Creative Rotation"]
 
-    # Only Prisma paste tab is cleared.
     paste_dataframe_to_prisma(ws_prisma, prisma_df)
-
-    # Traffic_Doc is NOT cleared. Formulas remain as-is.
-    # Only Multi-Ad output rows are cleared.
     clear_multi_sheet(ws_multi)
 
     multi_row = 2
     review_rows = []
 
     for i, row in prisma_df.iterrows():
-        excel_row = i + 7   # Traffic_Doc starts from row 7 in your template
+        excel_row = TRAFFIC_START_ROW + i
 
         try:
             dimension = row.iloc[19]        # Prisma T
@@ -311,61 +359,50 @@ if st.button("Generate Traffic Sheet"):
             st.error("Tsheet needs columns up to X.")
             st.stop()
 
-        if ad_name_option == "Yes":
-            ad_name = placement_name
-        else:
-            ad_name = generate_ad_name(placement_name, dimension, ad_name_format)
+        dim_clean = normalize_dimension(dimension)
+        matches = match_creatives(dimension, placement_name, creative_names) if creative_names else []
 
-        # Only manual editable columns
+        matched_creative = ""
+        if dim_clean == "1x1":
+            matched_creative = custom_1x1
+        elif matches:
+            matched_creative = matches[0]
+
+        ad_name = generate_ad_name_by_account(
+            placement_name,
+            dimension,
+            selected_account,
+            selected_taxonomy,
+            matched_creative
+        )
+
         ws_traffic[f"H{excel_row}"] = ad_name
+
+        if matched_creative:
+            ws_traffic[f"K{excel_row}"] = matched_creative
+        elif creative_names:
+            ws_traffic[f"K{excel_row}"] = "Creative not found"
+            review_rows.append({
+                "Traffic_Doc Row": excel_row,
+                "Placement Name": placement_name,
+                "Dimension": dimension,
+                "Issue": "Creative not found"
+            })
 
         matched_utm = find_utm_for_row(utm_df, placement_name, dimension)
         if matched_utm:
             ws_traffic[f"{utm_output_column}{excel_row}"] = matched_utm
 
-        dim_clean = normalize_dimension(dimension)
+        if creative_type == "Multiple creatives per ad" and len(matches) > 1:
+            ws_traffic[f"K{excel_row}"] = "Multiple creatives - see rotation tab"
 
-        if dim_clean == "1x1":
-            ws_traffic[f"K{excel_row}"] = custom_1x1
-            continue
-
-        if creative_names:
-            matches = match_creatives(dimension, placement_name, creative_names)
-
-            if creative_type == "Single creative per ad":
-                if len(matches) >= 1:
-                    ws_traffic[f"K{excel_row}"] = matches[0]
-                else:
-                    ws_traffic[f"K{excel_row}"] = "Creative not found"
-                    review_rows.append({
-                        "Traffic_Doc Row": excel_row,
-                        "Placement Name": placement_name,
-                        "Dimension": dimension,
-                        "Issue": "Creative not found"
-                    })
-
-            else:
-                if len(matches) == 1:
-                    ws_traffic[f"K{excel_row}"] = matches[0]
-
-                elif len(matches) > 1:
-                    ws_traffic[f"K{excel_row}"] = "Multiple creatives - see rotation tab"
-
-                    for creative in matches:
-                        ws_multi[f"A{multi_row}"] = ad_name
-                        ws_multi[f"D{multi_row}"] = creative
-                        ws_multi[f"F{multi_row}"] = "Even"
-                        ws_multi[f"G{multi_row}"] = start_date
-                        ws_multi[f"H{multi_row}"] = end_date
-                        multi_row += 1
-                else:
-                    ws_traffic[f"K{excel_row}"] = "Creative not found"
-                    review_rows.append({
-                        "Traffic_Doc Row": excel_row,
-                        "Placement Name": placement_name,
-                        "Dimension": dimension,
-                        "Issue": "Creative not found"
-                    })
+            for creative in matches:
+                ws_multi[f"A{multi_row}"] = ad_name
+                ws_multi[f"D{multi_row}"] = creative
+                ws_multi[f"F{multi_row}"] = "Even"
+                ws_multi[f"G{multi_row}"] = start_date
+                ws_multi[f"H{multi_row}"] = end_date
+                multi_row += 1
 
     final_output = io.BytesIO()
     wb.save(final_output)
