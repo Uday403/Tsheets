@@ -389,7 +389,7 @@ if st.button("Generate Traffic Sheet"):
                 "Issue": "Creative not found"
             })
 
-        matched_utm = find_utm_for_row(utm_df, placement_name, dimension)
+        matched_utm = find_utm_for_row(utm_df, placement_name, dimension, ad_name)
         if matched_utm:
             ws_traffic[f"{utm_output_column}{excel_row}"] = matched_utm
 
