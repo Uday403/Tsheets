@@ -51,6 +51,12 @@ STATE_MAP = {
 prisma_file = st.file_uploader("Upload Prisma / Tsheet Export", type=["xlsx", "xlsm", "xls", "csv"])
 
 selected_account = st.selectbox("Select Account", list(ACCOUNT_TAXONOMY.keys()))
+if selected_account == "Pulte VIP":
+    try:
+        pulte_tracking_codes = load_tracking_codes()
+        st.success("Pulte VIP Adobe tracking codes loaded successfully.")
+    except Exception as error:
+        st.error(f"Unable to load Pulte VIP tracking codes: {error}")
 selected_taxonomy = st.selectbox("Select Ad Name Naming Convention", ACCOUNT_TAXONOMY[selected_account])
 
 creative_type = st.radio("Creative setup type", ["Single creative per ad", "Multiple creatives per ad"])
