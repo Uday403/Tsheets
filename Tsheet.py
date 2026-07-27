@@ -29,6 +29,7 @@ ACCOUNT_TAXONOMY = {
     "UPS Store": ["Creative Name = Ad Name"],
     "USTA": ["Dimension = Ad Name"],
     "Pulte": ["Pulte: Market_Brand_Initiative_Property_Duration"],
+    "Pulte VIP": ["Pulte_VIP"],
     "Touchstone Energy": ["Last Meaningful Placement Segment"],
     "Anthem / Elevance": ["ELV_LOB_State_Channel_SizeOrDuration"],
 }
