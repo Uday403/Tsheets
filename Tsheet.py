@@ -367,6 +367,14 @@ if st.button("Generate Traffic Sheet"):
             st.error("Tsheet needs columns up to X.")
             st.stop()
 
+        # Temporary Pulte VIP parser test.
+        # Shows only the first parsed placement and continues generating the workbook.
+        if selected_account == "Pulte VIP" and i == prisma_df.index[0]:
+            parsed = parse_pulte_vip_placement(placement_name)
+            st.subheader("Pulte VIP Placement Parser Test")
+            st.write("Placement:", placement_name)
+            st.json(parsed)
+
         dim_clean = normalize_dimension(dimension)
         matches = match_creatives(dimension, placement_name, creative_names) if creative_names else []
 
@@ -397,7 +405,7 @@ if st.button("Generate Traffic Sheet"):
                 "Issue": "Creative not found"
             })
 
-        matched_utm = find_utm_for_row(utm_df, placement_name, dimension, ad_name)
+        matched_utm = find_utm_for_row(utm_df, placement_name, dimension)
         if matched_utm:
             ws_traffic[f"{utm_output_column}{excel_row}"] = matched_utm
 
