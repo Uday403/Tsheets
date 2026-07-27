@@ -79,9 +79,46 @@ utm_output_column = st.text_input("Traffic_Doc UTM output column", value="P")
 
 def read_prisma_file(uploaded_file):
     ext = uploaded_file.name.split(".")[-1].lower()
+
+    if ext in ["xlsx", "xlsm", "xls"]:
+        return pd.read_excel(uploaded_file, sheet_name=0)
+
     if ext == "csv":
-        return pd.read_csv(uploaded_file)
-    return pd.read_excel(uploaded_file, sheet_name=0)
+        uploaded_file.seek(0)
+
+        file_text = uploaded_file.read().decode(
+            "utf-8-sig",
+            errors="replace"
+        )
+
+        lines = file_text.splitlines()
+        header_row = None
+
+        for row_number, line in enumerate(lines):
+            line_lower = line.lower()
+
+            if (
+                "placement name" in line_lower
+                and "placement id" in line_lower
+            ):
+                header_row = row_number
+                break
+
+        if header_row is None:
+            raise ValueError(
+                "Unable to find the Prisma table header in the CSV."
+            )
+
+        uploaded_file.seek(0)
+
+        return pd.read_csv(
+            uploaded_file,
+            skiprows=header_row
+        )
+
+    raise ValueError(
+        f"Unsupported Prisma file type: {ext}"
+    )
 
 
 def read_utm_text(text):
